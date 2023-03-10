@@ -108,6 +108,11 @@ print(wandb_project)"""
 print(dataset)
 exec(f"from keras.datasets import {dataset} as ds")
 (train_X, train_y), (test_X, test_y) = ds.load_data()
+ii = np.random.shuffle(np.arange(0, np.size(train_y)))
+val_X = train_X[ii[-int(np.size(train_X)/10):]]
+val_y = train_y[ii[-int(np.size(train_X)/10):]]
+train_X = train_X[ii[:-int(np.size(train_X)/10)]]
+train_y = train_y[ii[:-int(np.size(train_X)/10)]]
 print('X_train: ' + str(train_X.shape))
 print('Y_train: ' + str(train_y.shape))
 print('X_test:  '  + str(test_X.shape))
@@ -127,10 +132,10 @@ plt.show()
 #NUMBER OF NEURONS IN EACH HIDDEN LAYER IS hidden_size (same number of neurons in each hidden layer)
 
 #Creating a weights lists which has weights for all the layers
-Weights = [np.random.normal(0,1,(hidden_size,784))] #number of inputs 
-intermediate_weights = [np.random.normal(0,1,(hidden_size, hidden_size))]*(num_layers-1)
+Weights = [np.random.normal(0,2/np.sqrt(784),(hidden_size,784))] #number of inputs 
+intermediate_weights = [np.random.normal(0,2/np.sqrt(hidden_size),(hidden_size, hidden_size))]*(num_layers-1)
 Weights = Weights + intermediate_weights
-Weights = Weights + [np.random.normal(0,1,(10, hidden_size))] #number of output classes
+Weights = Weights + [np.random.normal(0,2/np.sqrt(10),(10, hidden_size))] #number of output classes
 
 #Similarly for biases
 Biases = [np.random.normal(0,1,(hidden_size))]*num_layers
@@ -165,7 +170,14 @@ def forward_prop(inputs, Weights, Biases, num_layers, hidden_size, activation):
         a.append(np.matmul(Weights[i], h[-1]) + Biases[i])
         h.append(activationFunc(a[-1],activation))
     a.append(np.matmul(Weights[-1],h[-1]) + Biases[-1])
+    a[-1][np.where(a[-1] > 700)] = 700 #to make sure exp() doesnt go to infinity 
     y_pred = np.exp(a[-1])/(np.sum(np.exp(a[-1])))
+    if(np.isnan(np.sum(y_pred))):
+        print(a[-1])
+        print(np.exp(a[-1]))
+        print(np.sum(np.exp([a[-1]])))
+        print(y_pred)
+        
     #print("zzzzzzzzzzzzzzzz",y_pred)
     #print(bluh == y_pred)
     return a,h,y_pred
@@ -200,11 +212,31 @@ def back_prop(a, h, inputs, Weights, y_pred , y_true, num_layers, loss, activati
     for i in range(num_layers, 0 , -1): 
         #print("back_prop",i)
         gradW[i] = np.outer(grad_ak, h[i-1])
+        if np.linalg.norm(gradW[i]) > 100:
+            gradW[i] = gradW[i]*100/np.linalg.norm(gradW[i])
         gradB[i] = grad_ak
+        if np.linalg.norm(gradB[i]) > 100:
+            gradB[i] = gradB[i]*100/np.linalg.norm(gradB[i])
         #print(np.shape(Weights[i]), np.shape(grad_ak))
         grad_ak = np.matmul(Weights[i].T, grad_ak) * gdot_a[i-1]
-    gradW[0] = np.outer(grad_ak, inputs)
+    if np.linalg.norm(gradW[0]) > 100:
+            gradW[0] = gradW[0]*100/np.linalg.norm(gradW[0])
     gradB[0] = grad_ak
+    if np.linalg.norm(gradB[0]) > 100:
+        gradB[0] = gradB[0]*100/np.linalg.norm(gradB[0])
+
+    """print("in finding grad:")
+    print(np.where(np.isnan(gradW[0]) == True))
+    print(np.where(np.isnan(gradB[0]) == True))
+    print(np.where(np.isnan(np.array(gradW[1:-1])) == True))
+    print(np.where(np.isnan(np.array(gradB[1:-1])) == True))
+    print(np.where(np.isnan(gradW[-1]) == True))
+    print(np.where(np.isnan(gradB[-1]) == True))"""
+    if ((np.isnan(np.sum(gradW[0])))) or (np.isnan(np.array(np.sum(gradW[1:-1])))) or (np.isnan(np.sum(gradW[-1]))):
+        sys.exit()
+    if (np.isnan(np.sum(gradB[0]))) or (np.isnan(np.array(np.sum(gradB[1:-1])))) or (np.isnan(np.sum(gradB[-1]))):
+        sys.exit()
+    
     return gradW, gradB
     
 
@@ -222,6 +254,16 @@ def grad_descent(train_X, train_y, epochs, learning_rate, Weights, Biases, num_l
             grad_B[-1] += gradB[-1]
             grad_W[1:-1] = np.array(grad_W[1:-1]) + np.array(gradW[1:-1])
             grad_B[1:-1] = np.array(grad_B[1:-1]) + np.array(gradB[1:-1])
+        for i in range(num_layers+1):
+            print(np.linalg.norm(grad_W[i]))
+            if np.linalg.norm(grad_W[i]) > 100:
+          
+                grad_W[i] = grad_W[i]*100/np.linalg.norm(grad_W[i])
+              
+
+            if np.linalg.norm(grad_B[i]) > 100:
+                grad_B[i] = grad_B[i]*100/np.linalg.norm(grad_B[i])
+            
         print("grad_W",grad_W, "grad_B", grad_B)
         Weights[0] = Weights[0] - learning_rate*grad_W[0]
         Biases[0] = Biases[0] - learning_rate*grad_B[0]
@@ -252,13 +294,21 @@ def sgd(train_X, train_y, epochs, learning_rate, Weights, Biases, num_layers, hi
             Biases[-1] = Biases[-1] - learning_rate*grad_B[-1]
             Weights[1:-1] = np.array(Weights[1:-1]) - learning_rate*np.array(grad_W[1:-1])
             Biases[1:-1] = np.array(Biases[1:-1]) - learning_rate*np.array(grad_B[1:-1])
+        """print("in sgd")
+        print(np.where(np.isnan(Weights[0]) == True))
+        print(np.where(np.isnan(Biases[0]) == True))
+        print(np.where(np.isnan(np.array(Weights[1:-1])) == True))
+        print(np.where(np.isnan(np.array(Biases[1:-1])) == True))
+        print(np.where(np.isnan(Weights[-1]) == True))
+        print(np.where(np.isnan(Biases[-1]) == True))"""
+        
     return Weights, Biases
 ##--------------------------------------------------------------------------------------------------------------------------------------
 ## BRINGING IT ALL TOGETHER FOR THE FIRST TIME
 
 print("W", Weights, "B", Biases)
-#Weights, Biases = grad_descent(train_X, train_y, epochs, learning_rate, Weights, Biases, num_layers, hidden_size, loss, activation)
-Weights, Biases = sgd(train_X, train_y, epochs, learning_rate, Weights, Biases, num_layers, hidden_size, loss, activation)
+Weights, Biases = grad_descent(train_X, train_y, epochs, learning_rate, Weights, Biases, num_layers, hidden_size, loss, activation)
+#Weights, Biases = sgd(train_X, train_y, epochs, learning_rate, Weights, Biases, num_layers, hidden_size, loss, activation)
 print("W", Weights, "B", Biases)
 y_pred = [np.zeros(10)]
 for i in range(np.shape(test_X)[0]):
